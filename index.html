@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Kosmik Himoyachi</title>
+    <!-- Telegram WebApp skripti -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0d0f18;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 450px;
+            height: 100%;
+            max-height: 850px;
+            background: radial-gradient(circle at center, #1b2038 0%, #080a10 100%);
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+        /* Sensorli tugmalar */
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 25px;
+            pointer-events: none;
+        }
+        .dir-buttons {
+            display: flex;
+            gap: 15px;
+            pointer-events: auto;
+        }
+        .btn {
+            width: 65px;
+            height: 65px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            color: #fff;
+            font-size: 26px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+            touch-action: manipulation;
+        }
+        .btn:active {
+            background: rgba(0, 220, 255, 0.5);
+            transform: scale(0.92);
+        }
+        .shoot-btn {
+            width: 75px;
+            height: 75px;
+            background: rgba(255, 60, 60, 0.3);
+            border: 2px solid rgba(255, 80, 80, 0.6);
+            pointer-events: auto;
+        }
+        .shoot-btn:active {
+            background: rgba(255, 60, 60, 0.7);
+        }
+        /* Menyu oynasi */
+        .overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(10, 12, 20, 0.88);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            z-index: 10;
+        }
+        .overlay h1 {
+            font-size: 32px;
+            color: #00e5ff;
+            margin-bottom: 10px;
+            text-align: center;
+            letter-spacing: 2px;
+            text-shadow: 0 0 15px rgba(0, 229, 255, 0.6);
+        }
+        .overlay p {
+            font-size: 16px;
+            color: #ccc;
+            margin-bottom: 25px;
+        }
+        .play-btn {
+            padding: 14px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #fff;
+            background: linear-gradient(45deg, #0072ff, #00d4ff);
+            border: none;
+            border-radius: 30px;
+            box-shadow: 0 0 20px rgba(0, 114, 255, 0.6);
+            cursor: pointer;
+        }
+        .play-btn:active {
+            transform: scale(0.96);
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="controls">
+        <div class="dir-buttons">
+            <div class="btn" id="btn-left">◀</div>
+            <div class="btn" id="btn-right">▶</div>
+        </div>
+        <div class="btn shoot-btn" id="btn-fire">🔥</div>
+    </div>
+
+    <div class="overlay" id="start-screen">
+        <h1>KOSMIK HIMOYACHI</h1>
+        <p>Kosmosni dushmanlardan tozalang!</p>
+        <button class="play-btn" id="start-btn">O'YNASH</button>
+    </div>
+
+    <div class="overlay" id="game-over-screen" style="display: none;">
+        <h1 style="color: #ff3344;">O'YIN TUGADI</h1>
+        <p id="final-score">Ball: 0</p>
+        <button class="play-btn" id="restart-btn">QAYTA BOSHLASH</button>
+    </div>
+</div>
+
+<script>
+    if (window.Telegram && window.Telegram.WebApp) {
+        window.Telegram.WebApp.ready();
+        window.Telegram.WebApp.expand();
+    }
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const container = document.getElementById('game-container');
+
+    function resize() {
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Tovushlar (Web Audio)
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let audioCtx;
+    function playBeep(freq, type, duration) {
+        if (!audioCtx) audioCtx = new AudioCtx();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        try {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        } catch(e){}
+    }
+
+    // O'yin parametrlari
+    let player = { x: canvas.width / 2, y: canvas.height - 110, w: 36, h: 36, speed: 6 };
+    let bullets = [];
+    let enemies = [];
+    let particles = [];
+    let stars = Array.from({length: 45}, () => ({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        s: Math.random() * 2 + 1,
+        v: Math.random() * 1.5 + 0.5
+    }));
+
+    let score = 0;
+    let isRunning = false;
+    let moveLeft = false;
+    let moveRight = false;
+    let spawnTimer = 0;
+
+    // Boshqaruv tugmalari
+    const btnLeft = document.getElementById('btn-left');
+    const btnRight = document.getElementById('btn-right');
+    const btnFire = document.getElementById('btn-fire');
+
+    btnLeft.ontouchstart = (e) => { e.preventDefault(); moveLeft = true; };
+    btnLeft.ontouchend = () => moveLeft = false;
+    btnRight.ontouchstart = (e) => { e.preventDefault(); moveRight = true; };
+    btnRight.ontouchend = () => moveRight = false;
+    btnFire.ontouchstart = (e) => { e.preventDefault(); shoot(); };
+
+    // Sichqoncha va klaviatura
+    window.addEventListener('keydown', e => {
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') moveLeft = true;
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') moveRight = true;
+        if (e.code === 'Space') shoot();
+    });
+    window.addEventListener('keyup', e => {
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') moveLeft = false;
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') moveRight = false;
+    });
+
+    function shoot() {
+        if (!isRunning) return;
+        bullets.push({ x: player.x, y: player.y - 15, v: 8 });
+        playBeep(650, 'square', 0.1);
+    }
+
+    function createExplosion(x, y, color) {
+        for (let i = 0; i < 12; i++) {
+            particles.push({
+                x, y,
+                vx: (Math.random() - 0.5) * 6,
+                vy: (Math.random() - 0.5) * 6,
+                life: 1,
+                color
+            });
+        }
+    }
+
+    function spawnEnemy() {
+        enemies.push({
+            x: Math.random() * (canvas.width - 40) + 20,
+            y: -30,
+            size: Math.random() * 12 + 18,
+            speed: Math.random() * 2 + 2.5
+        });
+    }
+
+    function update() {
+        if (!isRunning) return;
+
+        // Harakat
+        if (moveLeft && player.x > player.w / 2) player.x -= player.speed;
+        if (moveRight && player.x < canvas.width - player.w / 2) player.x += player.speed;
+
+        // O'qlar
+        bullets.forEach((b, i) => {
+            b.y -= b.v;
+            if (b.y < -10) bullets.splice(i, 1);
+        });
+
+        // Dushmanlar
+        spawnTimer++;
+        if (spawnTimer > 35) {
+            spawnEnemy();
+            spawnTimer = 0;
+        }
+
+        enemies.forEach((en, i) => {
+            en.y += en.speed;
+
+            // Kema bilan to'qnashuv
+            const dist = Math.hypot(player.x - en.x, player.y - en.y);
+            if (dist < player.w / 2 + en.size / 2) {
+                gameOver();
+            }
+
+            // O'q bilan urish
+            bullets.forEach((b, bi) => {
+                const bDist = Math.hypot(b.x - en.x, b.y - en.y);
+                if (bDist < en.size) {
+                    createExplosion(en.x, en.y, '#ff4444');
+                    playBeep(180, 'sawtooth', 0.18);
+                    enemies.splice(i, 1);
+                    bullets.splice(bi, 1);
+                    score += 10;
+                }
+            });
+
+            if (en.y > canvas.height + 30) enemies.splice(i, 1);
+        });
+
+        // Zarralar
+        particles.forEach((p, i) => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= 0.03;
+            if (p.life <= 0) particles.splice(i, 1);
+        });
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Yulduzlar
+        ctx.fillStyle = '#ffffff';
+        stars.forEach(st => {
+            st.y += st.v;
+            if (st.y > canvas.height) st.y = 0;
+            ctx.beginPath();
+            ctx.arc(st.x, st.y, st.s, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        if (isRunning) {
+            // O'yinchi kemasi
+            ctx.fillStyle = '#00e5ff';
+            ctx.beginPath();
+            ctx.moveTo(player.x, player.y - player.h / 2);
+            ctx.lineTo(player.x - player.w / 2, player.y + player.h / 2);
+            ctx.lineTo(player.x + player.w / 2, player.y + player.h / 2);
+            ctx.closePath();
+            ctx.fill();
+
+            // O'qlar
+            ctx.fillStyle = '#ffee00';
+            bullets.forEach(b => {
+                ctx.fillRect(b.x - 2, b.y, 4, 12);
+            });
+
+            // Dushmanlar
+            ctx.fillStyle = '#ff3355';
+            enemies.forEach(en => {
+                ctx.beginPath();
+                ctx.arc(en.x, en.y, en.size / 2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Zarralar
+            particles.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life;
+                ctx.fillRect(p.x, p.y, 3, 3);
+            });
+            ctx.globalAlpha = 1;
+
+            // Ball ko'rsatkichi
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 18px sans-serif';
+            ctx.fillText('BALL: ' + score, 20, 35);
+        }
+
+        requestAnimationFrame(() => {
+            update();
+            draw();
+        });
+    }
+
+    function startGame() {
+        document.getElementById('start-screen').style.display = 'none';
+        document.getElementById('game-over-screen').style.display = 'none';
+        player.x = canvas.width / 2;
+        bullets = [];
+        enemies = [];
+        particles = [];
+        score = 0;
+        isRunning = true;
+    }
+
+    function gameOver() {
+        isRunning = false;
+        createExplosion(player.x, player.y, '#00e5ff');
+        playBeep(90, 'sawtooth', 0.4);
+        document.getElementById('final-score').innerText = 'To\'plangan ball: ' + score;
+        document.getElementById('game-over-screen').style.display = 'flex';
+    }
+
+    document.getElementById('start-btn').onclick = startGame;
+    document.getElementById('restart-btn').onclick = startGame;
+
+    draw();
+</script>
+</body>
+</html>
